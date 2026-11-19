@@ -1,0 +1,723 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#define MAX 50
+#define FILE_NAME "menu.txt"
+
+/* ----------- LINKED LIST (MENU) ----------- */
+
+typedef struct Menu {
+    int id;
+    char name[MAX];
+    float price;
+    struct Menu* next;
+} Menu;
+
+Menu* head = NULL;
+
+/* ----------- QUEUE (ORDERS) ----------- */
+
+typedef struct Order {
+    int orderId;
+    int itemId;
+    int quantity;
+    struct Order* next;
+} Order;
+
+Order *front = NULL, *rear = NULL;
+
+int orderCounter = 1;
+float totalRevenue = 0.0f;
+
+/* ----------- FUNCTION DECLARATIONS ----------- */
+
+void addItem();
+void displayMenu();
+void updatePrice();
+void removeItem();
+void saveToFile();
+void loadFromFile();
+
+void enqueueOrder(int itemId, int quantity);
+void placeOrder();
+void serveOrder();
+
+Menu* findItem(int id);
+
+void clearInputBuffer();
+int readInt(const char *message);
+float readFloat(const char *message);
+void readString(const char *message, char *str, int size);
+void freeMenu();
+void freeOrders();
+
+/* =========================================================
+   INPUT VALIDATION FUNCTIONS
+   ========================================================= */
+
+void clearInputBuffer() {
+    int ch;
+
+    while ((ch = getchar()) != '\n' && ch != EOF);
+}
+
+
+/* Read integer safely */
+int readInt(const char *message) {
+    int value;
+    char extra;
+
+    while (1) {
+        printf("%s", message);
+
+        if (scanf("%d", &value) == 1) {
+
+            /* Check for extra characters */
+            extra = getchar();
+
+            if (extra == '\n' || extra == EOF) {
+                return value;
+            }
+
+            printf("Error: Please enter a valid integer.\n");
+            clearInputBuffer();
+
+        } else {
+            printf("Error: Invalid input. Please enter a number.\n");
+            clearInputBuffer();
+        }
+    }
+}
+
+
+/* Read positive float safely */
+float readFloat(const char *message) {
+    float value;
+    char extra;
+
+    while (1) {
+        printf("%s", message);
+
+        if (scanf("%f", &value) == 1) {
+
+            extra = getchar();
+
+            if (extra == '\n' || extra == EOF) {
+
+                if (value > 0) {
+                    return value;
+                }
+
+                printf("Error: Value must be greater than 0.\n");
+            } else {
+                printf("Error: Invalid price.\n");
+                clearInputBuffer();
+            }
+
+        } else {
+            printf("Error: Please enter a valid number.\n");
+            clearInputBuffer();
+        }
+    }
+}
+
+
+/* Read string safely */
+void readString(const char *message, char *str, int size) {
+
+    while (1) {
+        printf("%s", message);
+
+        if (fgets(str, size, stdin) != NULL) {
+
+            /* Remove newline */
+            str[strcspn(str, "\n")] = '\0';
+
+            if (strlen(str) == 0) {
+                printf("Error: Input cannot be empty.\n");
+                continue;
+            }
+
+            /* Check if input was too long */
+            if (strchr(str, '\n') == NULL) {
+                clearInputBuffer();
+            }
+
+            return;
+        }
+
+        printf("Error reading input.\n");
+        clearInputBuffer();
+    }
+}
+
+
+/* =========================================================
+   FIND ITEM
+   ========================================================= */
+
+Menu* findItem(int id) {
+
+    Menu* temp = head;
+
+    while (temp != NULL) {
+
+        if (temp->id == id) {
+            return temp;
+        }
+
+        temp = temp->next;
+    }
+
+    return NULL;
+}
+
+
+/* =========================================================
+   ADD ITEM
+   ========================================================= */
+
+void addItem() {
+
+    Menu* newItem = (Menu*)malloc(sizeof(Menu));
+
+    if (newItem == NULL) {
+        printf("Error: Memory allocation failed!\n");
+        return;
+    }
+
+    newItem->id = readInt("Enter Item ID: ");
+
+    /* Check duplicate ID */
+    if (findItem(newItem->id) != NULL) {
+
+        printf("Error: Item ID already exists!\n");
+
+        free(newItem);
+        return;
+    }
+
+    readString("Enter Item Name: ",
+               newItem->name,
+               MAX);
+
+    newItem->price = readFloat("Enter Price: ");
+
+    newItem->next = head;
+    head = newItem;
+
+    printf("\nItem added successfully!\n");
+}
+
+
+/* =========================================================
+   DISPLAY MENU
+   ========================================================= */
+
+void displayMenu() {
+
+    Menu* temp = head;
+
+    if (head == NULL) {
+        printf("\nMenu is empty!\n");
+        return;
+    }
+
+    printf("\n========== MENU ==========\n");
+
+    while (temp != NULL) {
+
+        printf("ID: %d | Name: %s | Price: %.2f\n",
+               temp->id,
+               temp->name,
+               temp->price);
+
+        temp = temp->next;
+    }
+
+    printf("==========================\n");
+}
+
+
+/* =========================================================
+   UPDATE PRICE
+   ========================================================= */
+
+void updatePrice() {
+
+    int id = readInt("Enter Item ID to update: ");
+
+    Menu* item = findItem(id);
+
+    if (item == NULL) {
+        printf("Error: Item not found!\n");
+        return;
+    }
+
+    printf("Current Price: %.2f\n", item->price);
+
+    item->price = readFloat("Enter new price: ");
+
+    printf("Price updated successfully!\n");
+}
+
+
+/* =========================================================
+   REMOVE ITEM
+   ========================================================= */
+
+void removeItem() {
+
+    if (head == NULL) {
+        printf("Error: Menu is empty!\n");
+        return;
+    }
+
+    int id = readInt("Enter Item ID to remove: ");
+
+    Menu *temp = head;
+    Menu *prev = NULL;
+
+    /* First node */
+    if (temp != NULL && temp->id == id) {
+
+        head = temp->next;
+
+        free(temp);
+
+        printf("Item removed successfully!\n");
+
+        return;
+    }
+
+    /* Search */
+    while (temp != NULL && temp->id != id) {
+
+        prev = temp;
+        temp = temp->next;
+    }
+
+    if (temp == NULL) {
+
+        printf("Error: Item not found!\n");
+
+        return;
+    }
+
+    prev->next = temp->next;
+
+    free(temp);
+
+    printf("Item removed successfully!\n");
+}
+
+
+/* =========================================================
+   SAVE TO FILE
+   ========================================================= */
+
+void saveToFile() {
+
+    FILE *fp = fopen(FILE_NAME, "w");
+
+    if (fp == NULL) {
+
+        printf("Error: Cannot open file for writing!\n");
+        printf("Reason: %s\n", strerror(errno));
+
+        return;
+    }
+
+    Menu* temp = head;
+
+    while (temp != NULL) {
+
+        if (fprintf(fp, "%d %s %.2f\n",
+                    temp->id,
+                    temp->name,
+                    temp->price) < 0) {
+
+            printf("Error: Failed to write data to file.\n");
+
+            fclose(fp);
+            return;
+        }
+
+        temp = temp->next;
+    }
+
+    if (fclose(fp) != 0) {
+
+        printf("Error: Failed to close file properly.\n");
+
+        return;
+    }
+
+    printf("Menu saved successfully!\n");
+}
+
+
+/* =========================================================
+   LOAD FROM FILE
+   ========================================================= */
+
+void loadFromFile() {
+
+    FILE *fp = fopen(FILE_NAME, "r");
+
+    if (fp == NULL) {
+
+        /* File does not exist - normal on first run */
+        if (errno == ENOENT) {
+            printf("No previous menu found. Starting with empty menu.\n");
+        } else {
+            printf("Error opening menu file: %s\n",
+                   strerror(errno));
+        }
+
+        return;
+    }
+
+    int id;
+    char name[MAX];
+    float price;
+
+    while (fscanf(fp, "%d %49s %f",
+                  &id,
+                  name,
+                  &price) == 3) {
+
+        /* Validate file data */
+        if (id <= 0 || price <= 0) {
+
+            printf("Warning: Invalid data found in file. Skipping.\n");
+
+            continue;
+        }
+
+        /* Avoid duplicate IDs */
+        if (findItem(id) != NULL) {
+
+            printf("Warning: Duplicate ID %d found. Skipping.\n",
+                   id);
+
+            continue;
+        }
+
+        Menu* newItem =
+            (Menu*)malloc(sizeof(Menu));
+
+        if (newItem == NULL) {
+
+            printf("Error: Memory allocation failed while loading.\n");
+
+            fclose(fp);
+            return;
+        }
+
+        newItem->id = id;
+
+        strcpy(newItem->name, name);
+
+        newItem->price = price;
+
+        newItem->next = head;
+
+        head = newItem;
+    }
+
+    if (ferror(fp)) {
+        printf("Error: Problem occurred while reading file.\n");
+    }
+
+    fclose(fp);
+}
+
+
+/* =========================================================
+   ENQUEUE ORDER
+   ========================================================= */
+
+void enqueueOrder(int itemId, int quantity) {
+
+    Order* newOrder =
+        (Order*)malloc(sizeof(Order));
+
+    if (newOrder == NULL) {
+
+        printf("Error: Unable to allocate memory for order!\n");
+
+        return;
+    }
+
+    newOrder->orderId = orderCounter++;
+
+    newOrder->itemId = itemId;
+
+    newOrder->quantity = quantity;
+
+    newOrder->next = NULL;
+
+    if (rear == NULL) {
+
+        front = rear = newOrder;
+
+    } else {
+
+        rear->next = newOrder;
+
+        rear = newOrder;
+    }
+
+    printf("Order placed successfully!\n");
+    printf("Order ID: %d\n", newOrder->orderId);
+}
+
+
+/* =========================================================
+   PLACE ORDER
+   ========================================================= */
+
+void placeOrder() {
+
+    if (head == NULL) {
+
+        printf("Error: No items available in menu!\n");
+
+        return;
+    }
+
+    displayMenu();
+
+    int id = readInt("Enter Item ID: ");
+
+    Menu* item = findItem(id);
+
+    if (item == NULL) {
+
+        printf("Error: Invalid Item ID!\n");
+
+        return;
+    }
+
+    int qty = readInt("Enter Quantity: ");
+
+    if (qty <= 0) {
+
+        printf("Error: Quantity must be greater than 0!\n");
+
+        return;
+    }
+
+    enqueueOrder(id, qty);
+}
+
+
+/* =========================================================
+   SERVE ORDER
+   ========================================================= */
+
+void serveOrder() {
+
+    if (front == NULL) {
+
+        printf("No orders in queue!\n");
+
+        return;
+    }
+
+    Order* temp = front;
+
+    Menu* item = findItem(temp->itemId);
+
+    /*
+     * Important:
+     * The menu item may have been deleted after
+     * placing the order.
+     */
+
+    if (item == NULL) {
+
+        printf("\nError: Item for Order ID %d no longer exists!\n",
+               temp->orderId);
+
+        printf("Order cannot be billed.\n");
+
+        front = front->next;
+
+        if (front == NULL) {
+            rear = NULL;
+        }
+
+        free(temp);
+
+        return;
+    }
+
+    float total =
+        item->price * temp->quantity;
+
+    totalRevenue += total;
+
+    printf("\n========== BILL ==========\n");
+
+    printf("Order ID: %d\n",
+           temp->orderId);
+
+    printf("Item: %s\n",
+           item->name);
+
+    printf("Quantity: %d\n",
+           temp->quantity);
+
+    printf("Price per item: %.2f\n",
+           item->price);
+
+    printf("Total: %.2f\n",
+           total);
+
+    printf("==========================\n");
+
+    /* Remove from queue */
+
+    front = front->next;
+
+    if (front == NULL) {
+        rear = NULL;
+    }
+
+    free(temp);
+
+    printf("Order served successfully!\n");
+}
+
+
+/* =========================================================
+   FREE MENU MEMORY
+   ========================================================= */
+
+void freeMenu() {
+
+    Menu* temp;
+
+    while (head != NULL) {
+
+        temp = head;
+
+        head = head->next;
+
+        free(temp);
+    }
+}
+
+
+/* =========================================================
+   FREE ORDER MEMORY
+   ========================================================= */
+
+void freeOrders() {
+
+    Order* temp;
+
+    while (front != NULL) {
+
+        temp = front;
+
+        front = front->next;
+
+        free(temp);
+    }
+
+    rear = NULL;
+}
+
+
+/* =========================================================
+   MAIN FUNCTION
+   ========================================================= */
+
+int main() {
+
+    int choice;
+
+    loadFromFile();
+
+    while (1) {
+
+        printf("\n");
+        printf("================================\n");
+        printf("       CAFETERIA SYSTEM         \n");
+        printf("================================\n");
+
+        printf("1. Add Item\n");
+        printf("2. Display Menu\n");
+        printf("3. Update Price\n");
+        printf("4. Remove Item\n");
+        printf("5. Save Menu\n");
+        printf("6. Place Order\n");
+        printf("7. Serve Order\n");
+        printf("8. View Revenue\n");
+        printf("9. Exit\n");
+
+        printf("================================\n");
+
+        choice = readInt("Enter choice: ");
+
+        switch (choice) {
+
+            case 1:
+                addItem();
+                break;
+
+            case 2:
+                displayMenu();
+                break;
+
+            case 3:
+                updatePrice();
+                break;
+
+            case 4:
+                removeItem();
+                break;
+
+            case 5:
+                saveToFile();
+                break;
+
+            case 6:
+                placeOrder();
+                break;
+
+            case 7:
+                serveOrder();
+                break;
+
+            case 8:
+                printf("\nTotal Revenue: %.2f\n",
+                       totalRevenue);
+                break;
+
+            case 9:
+
+                /*
+                 * Automatically save before exiting.
+                 */
+                saveToFile();
+
+                freeMenu();
+                freeOrders();
+
+                printf("Program terminated successfully.\n");
+
+                return 0;
+
+            default:
+
+                printf("Error: Invalid choice!\n");
+                printf("Please select a number between 1 and 9.\n");
+        }
+    }
+}
